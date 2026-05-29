@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 from scoring import score_job
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 KEYWORDS = [
     "Associate Director GenAI Architect",
     "Principal AI Architect GenAI",
@@ -42,69 +42,66 @@ def build_job(title, link, snippet, portal, company="To verify", location="Banga
     }
 
 
+def get_json(url):
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=25)
+        r.raise_for_status()
+        return r.json()
+    except Exception as exc:
+        print(f"API fetch failed: {url} :: {exc}")
+        return None
+
+
 def fetch_html(url):
     try:
-        response = requests.get(url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-        return response.text
+        r = requests.get(url, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        return r.text
     except Exception as exc:
         print(f"Source fetch failed: {url} :: {exc}")
         return ""
 
 
-def search_naukri():
+def keyword_match(text):
+    t = (text or "").lower()
+    return any(k.lower().split()[0] in t for k in KEYWORDS) or any(x in t for x in ["genai", "llm", "architect", "cloud", "ai"])
+
+
+def search_remotive_api():
     jobs = []
-    for keyword in KEYWORDS:
-        url = f"https://www.naukri.com/{quote_plus(keyword).replace('+', '-')}-jobs-in-bangalore"
-        html = fetch_html(url)
-        soup = BeautifulSoup(html, "html.parser")
-        for card in soup.select("article, .srp-jobtuple-wrapper, .jobTuple")[:8]:
-            title_el = card.select_one("a.title, .title a, a")
-            if not title_el:
-                continue
-            title = clean(title_el.get_text(" "))
-            link = title_el.get("href", "")
-            snippet = clean(card.get_text(" "))
-            if link and title:
-                jobs.append(build_job(title, link, snippet, "Naukri"))
+    data = get_json("https://remotive.com/api/remote-jobs?search=ai%20architect")
+    for item in (data or {}).get("jobs", [])[:80]:
+        title = item.get("title", "")
+        desc = item.get("description", "")
+        if not keyword_match(title + " " + desc):
+            continue
+        jobs.append(build_job(title, item.get("url", ""), desc, "Remotive API", item.get("company_name", "To verify"), item.get("candidate_required_location", "Remote")))
     return jobs
 
 
-def search_indeed():
+def search_remoteok_api():
     jobs = []
-    for keyword in KEYWORDS:
-        url = f"https://in.indeed.com/jobs?q={quote_plus(keyword)}&l=Bengaluru%2C+Karnataka"
-        html = fetch_html(url)
-        soup = BeautifulSoup(html, "html.parser")
-        for card in soup.select(".job_seen_beacon, .result, [data-jk]")[:8]:
-            title_el = card.select_one("h2 a, a.jcs-JobTitle, a[data-jk]")
-            if not title_el:
-                continue
-            title = clean(title_el.get_text(" "))
-            href = title_el.get("href", "")
-            link = href if href.startswith("http") else f"https://in.indeed.com{href}"
-            company_el = card.select_one('[data-testid="company-name"], .companyName')
-            location_el = card.select_one('[data-testid="text-location"], .companyLocation')
-            snippet = clean(card.get_text(" "))
-            jobs.append(build_job(title, link, snippet, "Indeed", clean(company_el.get_text(" ")) if company_el else "To verify", clean(location_el.get_text(" ")) if location_el else "Bangalore"))
+    data = get_json("https://remoteok.com/api")
+    if not isinstance(data, list):
+        return jobs
+    for item in data[1:120]:
+        title = item.get("position", "")
+        desc = " ".join([item.get("description", ""), " ".join(item.get("tags", []) or [])])
+        if not keyword_match(title + " " + desc):
+            continue
+        jobs.append(build_job(title, item.get("url", ""), desc, "RemoteOK API", item.get("company", "To verify"), item.get("location", "Remote")))
     return jobs
 
 
-def search_foundit():
+def search_arbeitnow_api():
     jobs = []
-    for keyword in KEYWORDS:
-        url = f"https://www.foundit.in/srp/results?query={quote_plus(keyword)}&locations=Bengaluru"
-        html = fetch_html(url)
-        soup = BeautifulSoup(html, "html.parser")
-        for card in soup.select(".cardContainer, .jobTuple, .job-card, article")[:8]:
-            title_el = card.select_one("a, .jobTitle a")
-            if not title_el:
-                continue
-            title = clean(title_el.get_text(" "))
-            href = title_el.get("href", "")
-            link = href if href.startswith("http") else f"https://www.foundit.in{href}"
-            snippet = clean(card.get_text(" "))
-            jobs.append(build_job(title, link, snippet, "Foundit"))
+    data = get_json("https://www.arbeitnow.com/api/job-board-api")
+    for item in (data or {}).get("data", [])[:100]:
+        title = item.get("title", "")
+        desc = item.get("description", "")
+        if not keyword_match(title + " " + desc):
+            continue
+        jobs.append(build_job(title, item.get("url", ""), desc, "Arbeitnow API", item.get("company_name", "To verify"), item.get("location", "Remote/Global")))
     return jobs
 
 
@@ -112,51 +109,84 @@ def search_linkedin_public():
     jobs = []
     for keyword in KEYWORDS:
         url = f"https://www.linkedin.com/jobs/search?keywords={quote_plus(keyword)}&location=Bengaluru%2C%20Karnataka%2C%20India"
-        html = fetch_html(url)
-        soup = BeautifulSoup(html, "html.parser")
-        for card in soup.select(".base-card, .jobs-search__results-list li")[:8]:
+        soup = BeautifulSoup(fetch_html(url), "html.parser")
+        for card in soup.select(".base-card, .jobs-search__results-list li")[:6]:
             title_el = card.select_one("h3, .base-search-card__title")
             link_el = card.select_one("a")
             company_el = card.select_one("h4, .base-search-card__subtitle")
             location_el = card.select_one(".job-search-card__location")
-            if not title_el or not link_el:
-                continue
-            title = clean(title_el.get_text(" "))
-            link = link_el.get("href", "")
-            snippet = clean(card.get_text(" "))
-            jobs.append(build_job(title, link, snippet, "LinkedIn", clean(company_el.get_text(" ")) if company_el else "To verify", clean(location_el.get_text(" ")) if location_el else "Bangalore"))
+            if title_el and link_el:
+                jobs.append(build_job(clean(title_el.get_text(" ")), link_el.get("href", ""), clean(card.get_text(" ")), "LinkedIn", clean(company_el.get_text(" ")) if company_el else "To verify", clean(location_el.get_text(" ")) if location_el else "Bangalore"))
     return jobs
 
 
-def search_greenhouse_lever_workday_fallback():
+def search_naukri():
+    jobs = []
+    for keyword in KEYWORDS:
+        url = f"https://www.naukri.com/{quote_plus(keyword).replace('+', '-')}-jobs-in-bangalore"
+        soup = BeautifulSoup(fetch_html(url), "html.parser")
+        for card in soup.select("article, .srp-jobtuple-wrapper, .jobTuple")[:6]:
+            title_el = card.select_one("a.title, .title a, a")
+            if title_el:
+                jobs.append(build_job(clean(title_el.get_text(" ")), title_el.get("href", ""), clean(card.get_text(" ")), "Naukri"))
+    return jobs
+
+
+def search_indeed():
+    jobs = []
+    for keyword in KEYWORDS:
+        url = f"https://in.indeed.com/jobs?q={quote_plus(keyword)}&l=Bengaluru%2C+Karnataka"
+        soup = BeautifulSoup(fetch_html(url), "html.parser")
+        for card in soup.select(".job_seen_beacon, .result, [data-jk]")[:6]:
+            title_el = card.select_one("h2 a, a.jcs-JobTitle, a[data-jk]")
+            if title_el:
+                href = title_el.get("href", "")
+                link = href if href.startswith("http") else f"https://in.indeed.com{href}"
+                jobs.append(build_job(clean(title_el.get_text(" ")), link, clean(card.get_text(" ")), "Indeed"))
+    return jobs
+
+
+def search_foundit():
+    jobs = []
+    for keyword in KEYWORDS:
+        url = f"https://www.foundit.in/srp/results?query={quote_plus(keyword)}&locations=Bengaluru"
+        soup = BeautifulSoup(fetch_html(url), "html.parser")
+        for card in soup.select(".cardContainer, .jobTuple, .job-card, article")[:6]:
+            title_el = card.select_one("a, .jobTitle a")
+            if title_el:
+                href = title_el.get("href", "")
+                link = href if href.startswith("http") else f"https://www.foundit.in{href}"
+                jobs.append(build_job(clean(title_el.get_text(" ")), link, clean(card.get_text(" ")), "Foundit"))
+    return jobs
+
+
+def search_company_fallback():
     jobs = []
     sites = ["greenhouse.io", "lever.co", "myworkdayjobs.com", "careers.microsoft.com", "careers.google.com", "careers.gehealthcare.com", "oracle.com", "salesforce.com", "servicenow.com"]
     for site in sites:
         for keyword in KEYWORDS[:4]:
             url = "https://www.bing.com/search?q=" + quote_plus(f"site:{site} {keyword} India job apply")
-            html = fetch_html(url)
-            soup = BeautifulSoup(html, "html.parser")
-            for item in soup.select("li.b_algo")[:4]:
+            soup = BeautifulSoup(fetch_html(url), "html.parser")
+            for item in soup.select("li.b_algo")[:3]:
                 title_el = item.select_one("h2")
                 link_el = item.select_one("h2 a")
                 snippet_el = item.select_one("p")
-                if not title_el or not link_el:
-                    continue
-                title = clean(title_el.get_text(" "))
-                link = link_el.get("href", "")
-                snippet = clean(snippet_el.get_text(" ") if snippet_el else "")
-                jobs.append(build_job(title, link, snippet, "Company Careers"))
+                if title_el and link_el:
+                    jobs.append(build_job(clean(title_el.get_text(" ")), link_el.get("href", ""), clean(snippet_el.get_text(" ") if snippet_el else ""), "Company Careers"))
     return jobs
 
 
 def collect_jobs():
     all_jobs = []
     source_functions = [
+        search_remotive_api,
+        search_remoteok_api,
+        search_arbeitnow_api,
         search_linkedin_public,
         search_naukri,
         search_indeed,
         search_foundit,
-        search_greenhouse_lever_workday_fallback,
+        search_company_fallback,
     ]
     for fn in source_functions:
         try:
