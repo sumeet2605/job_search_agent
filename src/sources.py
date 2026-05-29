@@ -6,16 +6,9 @@ from bs4 import BeautifulSoup
 from scoring import score_job
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
-KEYWORDS = [
-    "Associate Director GenAI Architect",
-    "Principal AI Architect GenAI",
-    "Director AI Transformation",
-    "Enterprise AI Architect LLM RAG",
-    "Cloud AI Architect GCP GenAI",
-    "Healthcare GenAI Architect",
-    "GenAI Practice Lead",
-    "LLMOps Architect",
-]
+KEYWORDS = ["Associate Director GenAI Architect", "Principal AI Architect GenAI", "Director AI Transformation", "Enterprise AI Architect LLM RAG", "Cloud AI Architect GCP GenAI", "Healthcare GenAI Architect", "GenAI Practice Lead", "LLMOps Architect"]
+GREENHOUSE_BOARDS = ["airbnb", "databricks", "doordash", "dropbox", "figma", "gitlab", "grammarly", "mixpanel", "reddit", "stripe"]
+LEVER_COMPANIES = ["scaleai", "weightsbiases", "cohere", "huggingface", "anthropic", "anduril", "ramp", "rippling", "netlify", "zapier"]
 
 
 def clean(text):
@@ -24,22 +17,7 @@ def clean(text):
 
 def build_job(title, link, snippet, portal, company="To verify", location="Bangalore / India / Remote"):
     score, priority, why, risk, resume_version = score_job(title, snippet, link)
-    return {
-        "company": company or "To verify",
-        "title": clean(title),
-        "location": location or "Bangalore / India / Remote",
-        "work_mode": "Hybrid/Remote/On-site to verify",
-        "portal": portal,
-        "link": link,
-        "score": score,
-        "priority": priority,
-        "why": why,
-        "risk": risk,
-        "resume_version": resume_version,
-        "salary": "Not listed",
-        "status": "Not Applied",
-        "notes": clean(snippet)[:450],
-    }
+    return {"company": company or "To verify", "title": clean(title), "location": location or "Bangalore / India / Remote", "work_mode": "Hybrid/Remote/On-site to verify", "portal": portal, "link": link, "score": score, "priority": priority, "why": why, "risk": risk, "resume_version": resume_version, "salary": "Not listed", "status": "Not Applied", "notes": clean(snippet)[:450]}
 
 
 def get_json(url):
@@ -64,7 +42,36 @@ def fetch_html(url):
 
 def keyword_match(text):
     t = (text or "").lower()
-    return any(k.lower().split()[0] in t for k in KEYWORDS) or any(x in t for x in ["genai", "llm", "architect", "cloud", "ai"])
+    return any(x in t for x in ["genai", "generative ai", "llm", "architect", "cloud", "ai", "mlops", "platform", "director"])
+
+
+def search_greenhouse_api():
+    jobs = []
+    for board in GREENHOUSE_BOARDS:
+        data = get_json(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true")
+        for item in (data or {}).get("jobs", []):
+            title = item.get("title", "")
+            content = item.get("content", "")
+            location = (item.get("location") or {}).get("name", "Global/Remote")
+            if keyword_match(title + " " + content):
+                jobs.append(build_job(title, item.get("absolute_url", ""), content, "Greenhouse API", board, location))
+    return jobs
+
+
+def search_lever_api():
+    jobs = []
+    for company in LEVER_COMPANIES:
+        data = get_json(f"https://api.lever.co/v0/postings/{company}?mode=json")
+        if not isinstance(data, list):
+            continue
+        for item in data:
+            title = item.get("text", "")
+            desc = " ".join([item.get("descriptionPlain", ""), item.get("additionalPlain", "")])
+            categories = item.get("categories") or {}
+            location = categories.get("location", "Global/Remote")
+            if keyword_match(title + " " + desc):
+                jobs.append(build_job(title, item.get("hostedUrl", ""), desc, "Lever API", company, location))
+    return jobs
 
 
 def search_remotive_api():
@@ -73,9 +80,8 @@ def search_remotive_api():
     for item in (data or {}).get("jobs", [])[:80]:
         title = item.get("title", "")
         desc = item.get("description", "")
-        if not keyword_match(title + " " + desc):
-            continue
-        jobs.append(build_job(title, item.get("url", ""), desc, "Remotive API", item.get("company_name", "To verify"), item.get("candidate_required_location", "Remote")))
+        if keyword_match(title + " " + desc):
+            jobs.append(build_job(title, item.get("url", ""), desc, "Remotive API", item.get("company_name", "To verify"), item.get("candidate_required_location", "Remote")))
     return jobs
 
 
@@ -87,9 +93,8 @@ def search_remoteok_api():
     for item in data[1:120]:
         title = item.get("position", "")
         desc = " ".join([item.get("description", ""), " ".join(item.get("tags", []) or [])])
-        if not keyword_match(title + " " + desc):
-            continue
-        jobs.append(build_job(title, item.get("url", ""), desc, "RemoteOK API", item.get("company", "To verify"), item.get("location", "Remote")))
+        if keyword_match(title + " " + desc):
+            jobs.append(build_job(title, item.get("url", ""), desc, "RemoteOK API", item.get("company", "To verify"), item.get("location", "Remote")))
     return jobs
 
 
@@ -99,9 +104,8 @@ def search_arbeitnow_api():
     for item in (data or {}).get("data", [])[:100]:
         title = item.get("title", "")
         desc = item.get("description", "")
-        if not keyword_match(title + " " + desc):
-            continue
-        jobs.append(build_job(title, item.get("url", ""), desc, "Arbeitnow API", item.get("company_name", "To verify"), item.get("location", "Remote/Global")))
+        if keyword_match(title + " " + desc):
+            jobs.append(build_job(title, item.get("url", ""), desc, "Arbeitnow API", item.get("company_name", "To verify"), item.get("location", "Remote/Global")))
     return jobs
 
 
@@ -162,7 +166,7 @@ def search_foundit():
 
 def search_company_fallback():
     jobs = []
-    sites = ["greenhouse.io", "lever.co", "myworkdayjobs.com", "careers.microsoft.com", "careers.google.com", "careers.gehealthcare.com", "oracle.com", "salesforce.com", "servicenow.com"]
+    sites = ["myworkdayjobs.com", "careers.microsoft.com", "careers.google.com", "careers.gehealthcare.com", "oracle.com", "salesforce.com", "servicenow.com"]
     for site in sites:
         for keyword in KEYWORDS[:4]:
             url = "https://www.bing.com/search?q=" + quote_plus(f"site:{site} {keyword} India job apply")
@@ -178,16 +182,7 @@ def search_company_fallback():
 
 def collect_jobs():
     all_jobs = []
-    source_functions = [
-        search_remotive_api,
-        search_remoteok_api,
-        search_arbeitnow_api,
-        search_linkedin_public,
-        search_naukri,
-        search_indeed,
-        search_foundit,
-        search_company_fallback,
-    ]
+    source_functions = [search_greenhouse_api, search_lever_api, search_remotive_api, search_remoteok_api, search_arbeitnow_api, search_linkedin_public, search_naukri, search_indeed, search_foundit, search_company_fallback]
     for fn in source_functions:
         try:
             found = fn()
