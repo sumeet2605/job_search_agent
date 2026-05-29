@@ -25,7 +25,7 @@ PROFILE_KEYWORDS = {
     "cloud architect": 10, "gcp": 9, "aws": 6, "azure": 7,
     "python": 6, "langgraph": 8, "openai": 8, "mlops": 7, "llmops": 8,
     "healthcare": 9, "digital transformation": 7, "platform engineering": 7,
-    "conversational ai": 8, "dialogflow": 9
+    "conversational ai": 8, "dialogflow": 9, "architect": 8, "lead": 6
 }
 
 SEARCH_QUERIES = [
@@ -37,6 +37,8 @@ SEARCH_QUERIES = [
     "Healthcare GenAI Architect Bangalore jobs",
     "GenAI Practice Lead Bangalore jobs",
     "LLMOps Architect India jobs",
+    "Generative AI Solution Architect India jobs",
+    "AI Transformation Director Bangalore jobs",
 ]
 
 
@@ -73,7 +75,7 @@ def clean(text):
 
 def score_job(title, snippet):
     text = f"{title} {snippet}".lower()
-    score = 40
+    score = 45
     reasons = []
     for keyword, weight in PROFILE_KEYWORDS.items():
         if keyword in text:
@@ -90,8 +92,7 @@ def score_job(title, snippet):
 
 
 def infer_company(title):
-    separators = [" - ", " | ", " at "]
-    for sep in separators:
+    for sep in [" - ", " | ", " at "]:
         if sep in title:
             return clean(title.split(sep)[-1])[:80]
     return "To verify"
@@ -103,7 +104,7 @@ def search_jobs():
         url = "https://www.bing.com/search?q=" + quote_plus(query + " apply")
         resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.select("li.b_algo")[:8]:
+        for item in soup.select("li.b_algo")[:10]:
             title_el = item.select_one("h2")
             link_el = item.select_one("h2 a")
             snippet_el = item.select_one("p")
@@ -130,9 +131,7 @@ def search_jobs():
                 "resume_version": resume_version,
                 "notes": snippet[:450],
             })
-    unique = {}
-    for job in jobs:
-        unique[job["link"]] = job
+    unique = {job["link"]: job for job in jobs}
     return sorted(unique.values(), key=lambda x: x["score"], reverse=True)[:30]
 
 
@@ -141,10 +140,11 @@ def append_jobs(service, jobs):
     today = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
     rows = []
     for job in jobs:
+        print(f"Candidate score={job['score']} priority={job['priority']} title={job['title'][:100]}")
         if job["link"] in known:
+            print("Skipping duplicate link")
             continue
-        if job["score"] < 55:
-            continue
+        # Always write the top discovered public candidates; later stages can hard-filter.
         rows.append([
             today,
             job["company"],
