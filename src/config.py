@@ -2,7 +2,7 @@ import os
 
 SPREADSHEET_ID = (os.environ.get("SPREADSHEET_ID") or "1ONHPQREesHZYJJxX3BldQthwyrFqxoHBizWGhjlUM5o").strip()
 SHEET_NAME = (os.environ.get("SHEET_NAME") or "Sheet1").strip()
-MIN_WRITE_SCORE = int(os.environ.get("MIN_WRITE_SCORE", "62"))
+MIN_WRITE_SCORE = int(os.environ.get("MIN_WRITE_SCORE", "75"))
 MAX_RESULTS_TO_WRITE = int(os.environ.get("MAX_RESULTS_TO_WRITE", "25"))
 ENABLE_BROWSERUSE = (os.environ.get("ENABLE_BROWSERUSE", "false").lower() == "true")
 
