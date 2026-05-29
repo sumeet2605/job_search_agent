@@ -9,8 +9,8 @@ from bs4 import BeautifulSoup
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1ONHPQREesHZYJJxX3BldQthwyrFqxoHBizWGhjlUM5o")
-SHEET_NAME = os.environ.get("SHEET_NAME", "Sheet1")
+SPREADSHEET_ID = (os.environ.get("SPREADSHEET_ID") or "1ONHPQREesHZYJJxX3BldQthwyrFqxoHBizWGhjlUM5o").strip()
+SHEET_NAME = (os.environ.get("SHEET_NAME") or "Sheet1").strip()
 
 HEADERS = [
     "Date Found", "Company", "Role / Title", "Location", "Work Mode", "Portal",
@@ -29,12 +29,14 @@ PROFILE_KEYWORDS = {
 }
 
 SEARCH_QUERIES = [
-    "Associate Director GenAI Architect Bangalore",
-    "Principal AI Architect GenAI Bangalore",
-    "Director AI Transformation GenAI India",
-    "Enterprise AI Architect LLM RAG Bangalore",
-    "Cloud AI Architect GCP GenAI Bangalore",
-    "Healthcare GenAI Architect Bangalore",
+    "Associate Director GenAI Architect Bangalore jobs",
+    "Principal AI Architect GenAI Bangalore jobs",
+    "Director AI Transformation GenAI India jobs",
+    "Enterprise AI Architect LLM RAG Bangalore jobs",
+    "Cloud AI Architect GCP GenAI Bangalore jobs",
+    "Healthcare GenAI Architect Bangalore jobs",
+    "GenAI Practice Lead Bangalore jobs",
+    "LLMOps Architect India jobs",
 ]
 
 
@@ -49,12 +51,11 @@ def get_sheets_service():
 
 
 def ensure_headers(service):
-    body = {"values": [HEADERS]}
     service.spreadsheets().values().update(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{SHEET_NAME}!A1:O1",
         valueInputOption="USER_ENTERED",
-        body=body,
+        body={"values": [HEADERS]},
     ).execute()
 
 
@@ -72,7 +73,7 @@ def clean(text):
 
 def score_job(title, snippet):
     text = f"{title} {snippet}".lower()
-    score = 35
+    score = 40
     reasons = []
     for keyword, weight in PROFILE_KEYWORDS.items():
         if keyword in text:
@@ -82,19 +83,27 @@ def score_job(title, snippet):
         score -= 35
     score = max(0, min(98, score))
     priority = "P1" if score >= 85 else "P2" if score >= 70 else "P3"
-    why = ", ".join(reasons[:10]) if reasons else "General cloud/AI leadership keyword match"
+    why = ", ".join(reasons[:10]) if reasons else "General senior AI/cloud architecture keyword match"
     risk = "Validate seniority, compensation, and hands-on GenAI depth"
     resume_version = "GenAI + Cloud Executive Resume"
     return score, priority, why, risk, resume_version
 
 
+def infer_company(title):
+    separators = [" - ", " | ", " at "]
+    for sep in separators:
+        if sep in title:
+            return clean(title.split(sep)[-1])[:80]
+    return "To verify"
+
+
 def search_jobs():
     jobs = []
     for query in SEARCH_QUERIES:
-        url = "https://www.bing.com/search?q=" + quote_plus(query + " jobs apply")
+        url = "https://www.bing.com/search?q=" + quote_plus(query + " apply")
         resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.select("li.b_algo")[:6]:
+        for item in soup.select("li.b_algo")[:8]:
             title_el = item.select_one("h2")
             link_el = item.select_one("h2 a")
             snippet_el = item.select_one("p")
@@ -104,19 +113,15 @@ def search_jobs():
             link = link_el.get("href")
             snippet = clean(snippet_el.get_text(" ") if snippet_el else "")
             lower = f"{title} {snippet} {link}".lower()
-            if not any(term in lower for term in ["job", "career", "linkedin", "naukri", "foundit", "indeed", "greenhouse", "lever"]):
+            if not any(term in lower for term in ["job", "career", "linkedin", "naukri", "foundit", "indeed", "greenhouse", "lever", "workday", "apply"]):
                 continue
-            company = title.split(" - ")[-1][:80] if " - " in title else "To verify"
-            location = "Bangalore / India / Remote"
-            work_mode = "Hybrid/Remote/On-site to verify"
-            portal = "Bing/Public web"
             score, priority, why, risk, resume_version = score_job(title, snippet)
             jobs.append({
-                "company": company,
+                "company": infer_company(title),
                 "title": title,
-                "location": location,
-                "work_mode": work_mode,
-                "portal": portal,
+                "location": "Bangalore / India / Remote",
+                "work_mode": "Hybrid/Remote/On-site to verify",
+                "portal": "Bing/Public web",
                 "link": link,
                 "score": score,
                 "priority": priority,
@@ -128,7 +133,7 @@ def search_jobs():
     unique = {}
     for job in jobs:
         unique[job["link"]] = job
-    return sorted(unique.values(), key=lambda x: x["score"], reverse=True)[:25]
+    return sorted(unique.values(), key=lambda x: x["score"], reverse=True)[:30]
 
 
 def append_jobs(service, jobs):
@@ -138,7 +143,7 @@ def append_jobs(service, jobs):
     for job in jobs:
         if job["link"] in known:
             continue
-        if job["score"] < 65:
+        if job["score"] < 55:
             continue
         rows.append([
             today,
@@ -169,6 +174,7 @@ def append_jobs(service, jobs):
 
 
 def main():
+    print(f"Using spreadsheet={SPREADSHEET_ID}, sheet={SHEET_NAME}")
     service = get_sheets_service()
     ensure_headers(service)
     jobs = search_jobs()
