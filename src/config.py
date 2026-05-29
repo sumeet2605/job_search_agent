@@ -4,6 +4,7 @@ SPREADSHEET_ID = (os.environ.get("SPREADSHEET_ID") or "1ONHPQREesHZYJJxX3BldQthw
 SHEET_NAME = (os.environ.get("SHEET_NAME") or "Sheet1").strip()
 MIN_WRITE_SCORE = int(os.environ.get("MIN_WRITE_SCORE", "62"))
 MAX_RESULTS_TO_WRITE = int(os.environ.get("MAX_RESULTS_TO_WRITE", "25"))
+ENABLE_BROWSERUSE = (os.environ.get("ENABLE_BROWSERUSE", "false").lower() == "true")
 
 HEADERS = [
     "Date Found", "Company", "Role / Title", "Location", "Work Mode", "Portal",
@@ -17,10 +18,7 @@ TARGET_ROLE_TERMS = [
     "head of ai", "ai transformation", "platform engineering"
 ]
 
-NEGATIVE_TERMS = [
-    "intern", "internship", "fresher", "junior", "graduate trainee", "student", "entry level",
-    "bpo", "sales executive", "telecaller", "data entry"
-]
+NEGATIVE_TERMS = ["intern", "internship", "fresher", "junior", "graduate trainee", "student", "entry level", "bpo", "sales executive", "telecaller", "data entry"]
 
 PROFILE_KEYWORDS = {
     "associate director": 16, "director": 12, "principal architect": 16,
